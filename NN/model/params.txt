@@ -1,0 +1,3 @@
+layers = 4
+neurons per layer = 300
+L2 penalty (weight decay, see torch adam documentation) = 1e-5
