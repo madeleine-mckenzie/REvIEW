@@ -1,4 +1,6 @@
-from my_imports import *
+from REvIEW_imports import *
+from NN.ffnn import FFNN
+from NN.scalar import Scalar
 
 
 def velocity_correction(wavelength, rv):
@@ -398,6 +400,44 @@ def gauss_4_model(x, a1, b1, c1, a2, b2, c2, a3, b3, c3, a4, b4, c4, d):
 
     return gauss_1_model(x, a1, b1, c1, 0) + gauss_1_model(x, a2, b2, c2, 0) + gauss_1_model(x, a3, b3, c3, 0) + gauss_1_model(x, a4, b4, c4, 0) + d
 
+def gauss_5_model(x, a1, b1, c1, a2, b2, c2, a3, b3, c3, a4, b4, c4, a5, b5, c5, d):
+    ''' A quadrupal gaussian function with a variable continuum
+
+    Used to fit an absorbtion feature of a spectrum. It takes the aruments of three gaussians and returns the equivelent function. The +d argument at the end allowes for the continuum to be fitted to rather than having it fixed at 1. This assumes that the normalisation process wasn't perfect.
+
+    Parameters
+    ----------
+    x : int, array
+            The wavelengths for the gaussian fit
+    a1 : int
+            The amplitude of the gaussian around the line centre
+    b1 : int
+            The centre wavelength of the gaussian peak
+    c1 : int
+            The standard deviation of the function (sigma)
+    a2 : int
+            The amplitude of the BLUE gaussian around the line centre
+    b2 : int
+            The centre BLUE wavelength of the gaussian peak
+    c2 : int
+            The standard deviation of the BLUE gaussian (sigma)
+    a3 : int
+            The amplitude of the RED gaussian around the line centre
+    b3 : int
+            The centre RED wavelength of the gaussian peak
+    c3 : int
+            The standard deviation of the RED gaussian (sigma)
+    d : int
+            The value of the continuum. For normalised spectra, this should be around 1
+
+    Returns
+    -------
+    int, array
+            (depending on what you imput as the x argument) and array of the triple gaussian curve
+    '''
+
+    return gauss_1_model(x, a1, b1, c1, 0) + gauss_1_model(x, a2, b2, c2, 0) + gauss_1_model(x, a3, b3, c3, 0) + gauss_1_model(x, a4, b4, c4, 0) + gauss_1_model(x, a5, b5, c5, 0) + d
+
 def gauss_1_fit2(wl, n_flux, a = -0.5, b = 0.6, c = 0.1):
     '''
     fitting function for a single gaussian
@@ -581,7 +621,7 @@ def gauss_3_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1,
     '''
     
     
-    pm_c = 0.18 # plus or minus centre
+    pm_c = 0.18 # plus or minus centre, usual setting - 0.18
     max_peak = 1
     centre = 0.6
     
@@ -591,14 +631,14 @@ def gauss_3_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1,
 
     # original bounds which are defaulted to when there are errors
     #                   a1      b1            c1 a2          b2     c2  a3       b3        c3  d
-    bounds_array = ((-1, centre - pm_c - 0.4, 0, -1, centre + pm_c, 0, -1, centre - max_peak,  0, 0.90), 
-                        (0, centre + pm_c + 0.4, 2,  0, centre + max_peak , 1,  0, centre - pm_c, 1, 1.05))
+    bounds_array = ((-1, centre - pm_c, 0, -1, centre + pm_c, 0, -1, centre - max_peak,  0, 0.90), 
+                     (0, centre + pm_c, 2,  0, centre + max_peak , 1,  0, centre - pm_c, 1, 1.05))
     
     p0_array = check_bounds(p0_array, bounds_array)
     
     # fit to the data
     coeff, var_matrix = curve_fit(gauss_3_model, wl, n_flux, 
-                                    p0 = p0_array, bounds= bounds_array, method = 'trf')
+                                    p0 = p0_array, bounds= bounds_array, maxfev=5000)
     return coeff, var_matrix
 
 def gauss_3LCR_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1, c2 = 0.1, a3 = -0.5, b3 = 0.09, c3 = 0.1):
@@ -968,7 +1008,7 @@ def compare_triple(other_flux, wl, flux):
     # apply a penalty to the triple gaussian
     # tuned so single gaussians are always fit with a single
     # Set the threshold at which we swap to the triple
-    fit_threshold = 2
+    fit_threshold = 3
     if (fit_threshold * chisquare(gauss_3_flux, flux)[0]) < chisquare(other_flux, flux)[0]:
         #print('using triple instead')
         return coeff3
@@ -1184,6 +1224,38 @@ def grad_change(wl, flux):
 
     return no_of_peaks
 
+def make_spline(wl, spline_wl, flux):
+    tck = interpolate.splrep(wl, flux, s=0)
+    spline = interpolate.splev(spline_wl, tck, der=0)
+
+    # remove values > 1 and < 0
+    spline[spline < 0] = 0
+    spline[spline > 1] = 1
+
+    # spline_wl should be the one with 86 points
+    return spline.reshape((1, 86))
+
+def nn_estimate(spectra, a, c):
+    '''
+    Performs neural network estimate. Written by Ella
+    each spectra MUST have 86 points, or eles the model won't work. Linearly interpolate. 
+    '''
+    # read in model and scalars
+    model = FFNN(0,0,model='NN/model')
+    X_scalar = Scalar()
+    X_scalar.load('NN/model/X_scalar.npy')
+    y_scalar = Scalar()
+    y_scalar.load('NN/model/y_scalar.npy')
+
+    X = X_scalar.transform(spectra) # transform the input
+    y = model.predict(X) # predict the value
+    y = y_scalar.untransform(y) # untransform the predicted value
+
+    print('predicted amp and std')
+    print(y)
+    print('ml ew:', get_gaussian_area(y[0, 0], y[0, 1]))
+    return y
+
 def fit_spectra(wl, flux):
     '''
     Main fitting code. Contains a number of flags that will be set to true if fitting fails.
@@ -1211,6 +1283,7 @@ def fit_spectra(wl, flux):
     # error flags
     tripe_improved_fit = False
     minima_error_to_triple = False
+    nn_warning = False
 
     # preprocessing to identify the number of minima in the spectra
     change_number = grad_change(wl, flux)
@@ -1417,5 +1490,15 @@ def fit_spectra(wl, flux):
     else:
         coeff, covar = gauss_3_fit2(wl, flux)
         minima_error_to_triple = True
+
+    # pass the interpolated spectra to the neural network
+    #nn_warning 
+    interpolated_spectra = make_spline(wl, np.arange(0, 1.207+0.0142, 0.0142), flux)
+
+    np.save('spectra'+ str(coeff[0]), interpolated_spectra)
+    nn_ac = nn_estimate(interpolated_spectra, coeff[0], coeff[2])
+    print('a = ', coeff[0], 'c = ', coeff[2])
+    print('curvefit ew:', get_gaussian_area(coeff[0], coeff[2]))
+
 
     return coeff, tripe_improved_fit, minima_error_to_triple
