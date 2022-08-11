@@ -1,4 +1,15 @@
-from my_imports import *
+#from REvIEW_imports import *
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import numpy as np
+import pandas as pd
+
+from scipy.stats import chisquare
+from scipy.optimize import curve_fit
+from scipy import interpolate
+
+from NN.ffnn import FFNN
+from NN.scalar import Scalar
 
 
 def velocity_correction(wavelength, rv):
@@ -398,6 +409,44 @@ def gauss_4_model(x, a1, b1, c1, a2, b2, c2, a3, b3, c3, a4, b4, c4, d):
 
     return gauss_1_model(x, a1, b1, c1, 0) + gauss_1_model(x, a2, b2, c2, 0) + gauss_1_model(x, a3, b3, c3, 0) + gauss_1_model(x, a4, b4, c4, 0) + d
 
+def gauss_5_model(x, a1, b1, c1, a2, b2, c2, a3, b3, c3, a4, b4, c4, a5, b5, c5, d):
+    ''' A quadrupal gaussian function with a variable continuum
+
+    Used to fit an absorbtion feature of a spectrum. It takes the aruments of three gaussians and returns the equivelent function. The +d argument at the end allowes for the continuum to be fitted to rather than having it fixed at 1. This assumes that the normalisation process wasn't perfect.
+
+    Parameters
+    ----------
+    x : int, array
+            The wavelengths for the gaussian fit
+    a1 : int
+            The amplitude of the gaussian around the line centre
+    b1 : int
+            The centre wavelength of the gaussian peak
+    c1 : int
+            The standard deviation of the function (sigma)
+    a2 : int
+            The amplitude of the BLUE gaussian around the line centre
+    b2 : int
+            The centre BLUE wavelength of the gaussian peak
+    c2 : int
+            The standard deviation of the BLUE gaussian (sigma)
+    a3 : int
+            The amplitude of the RED gaussian around the line centre
+    b3 : int
+            The centre RED wavelength of the gaussian peak
+    c3 : int
+            The standard deviation of the RED gaussian (sigma)
+    d : int
+            The value of the continuum. For normalised spectra, this should be around 1
+
+    Returns
+    -------
+    int, array
+            (depending on what you imput as the x argument) and array of the triple gaussian curve
+    '''
+
+    return gauss_1_model(x, a1, b1, c1, 0) + gauss_1_model(x, a2, b2, c2, 0) + gauss_1_model(x, a3, b3, c3, 0) + gauss_1_model(x, a4, b4, c4, 0) + gauss_1_model(x, a5, b5, c5, 0) + d
+
 def gauss_1_fit2(wl, n_flux, a = -0.5, b = 0.6, c = 0.1):
     '''
     fitting function for a single gaussian
@@ -477,13 +526,14 @@ def gauss_2R_fit2(wl, n_flux, a = -0.5, b = 0.6, c = 0.1, aR = -0.5, bR = 0.8, c
     pm_c = 0.18 # plus or minus centre
     max_peak = 1
     centre = 0.6
+    max_c = 0.2
 
     # guess array
     p0_array = [ a, b, c, aR, bR, cR, 1]
 
-    #                 a      b                c   aR       bR            cR    d
-    bounds_array = ((-1, centre - pm_c - 0.4, 0, -1, centre + pm_c,      0, 0.95), 
-                    ( 0, centre + pm_c + 0.4, 2,  0, centre + max_peak , 1, 1.05))
+    #                 a      b                c   aR       bR            cR      d
+    bounds_array = ((-1, centre - pm_c - 0.4, 0, -1, centre + pm_c,      0    , 0.95), 
+                    ( 0, centre + pm_c + 0.4, 2,  0, centre + max_peak , max_c, 1.05))
     
     p0_array = check_bounds(p0_array, bounds_array)
 
@@ -543,7 +593,71 @@ def gauss_2L_fit2(wl, n_flux, a = -0.5, b = 0.6, c = 0.1, aL = -0.5, bL = 0.4, c
                                     p0 = p0_array, bounds= bounds_array)
     return coeff, var_matrix
 
-def gauss_3_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1, c2 = 0.1, a3 = -0.5, b3 = 0.09, c3 = 0.1):
+def gauss_3_NN(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1, c2 = 0.1, a3 = -0.5, b3 = 0.09, c3 = 0.1):
+    '''
+    Triple fit with the neural network for the central gaussian
+
+    Parameters
+    ----------
+    wl : array
+        The wavelength array
+    n_flux : array
+        The spectra flux array
+    a1 : float
+        Amplitude
+    b1 : float
+        Position
+    c1 : float
+        standard deviation
+    a2 : float
+        Amplitude of right gaussian
+    b2 : float
+        Position of right gaussian
+    c2 : float
+        standard deviation of right gaussian
+    a3 : float
+        Amplitude of left gaussian
+    b3 : float
+        Position of left gaussian
+    c3 : float
+        standard deviation of left gaussian
+    
+    Returns
+    -------
+    coeff : arr
+        The coefficients of best fit
+    var_matrix : arr
+        Covarience matrix of the best fit
+    '''
+    
+    
+    pm_c = 0.18 # plus or minus centre, usual setting - 0.18
+    max_peak = 1
+    centre = 0.6
+    a_bounds = 0.001 # plus or minus the value its allowed to be from nn guess
+    c_bounds = 0.001 # same as a
+
+    # Need to considder the bounds of the training data
+    # If the network has never seen spectra in a certain region, 
+    # you cant use it to fit. Should be reflected by the bad chi^2 and
+    # shouldnt be selected for the final fit.
+    
+
+    # guess array
+    p0_array = [ a1, b1, c1, a2, b2, c2, a3, b3, c3, 1]
+
+    # original bounds which are defaulted to when there are errors
+    #                   a1           b1        c1        a2          b2          c2    a3       b3               c3   d
+    bounds_array = ((a1 - a_bounds, 0.5, c1 - c_bounds, -1, centre + pm_c,      0.05, -0.6, centre - max_peak, 0.05, 0.98), 
+                    (a1 + a_bounds, 0.7, c1 + c_bounds,  0, centre + max_peak ,  0.1,    0,     centre - pm_c,  0.1, 1.02))
+    p0_array = check_bounds(p0_array, bounds_array)
+    
+    # fit to the data
+    coeff, var_matrix = curve_fit(gauss_3_model, wl, n_flux, 
+                                    p0 = p0_array, bounds= bounds_array, maxfev=5000)
+    return coeff, var_matrix
+
+def gauss_3_uninformed(wl, n_flux,  a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1, c2 = 0.1, a3 = -0.5, b3 = 0.09, c3 = 0.1):
     '''
     Uninformed triple gaussian!!!
 
@@ -581,7 +695,7 @@ def gauss_3_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1,
     '''
     
     
-    pm_c = 0.18 # plus or minus centre
+    pm_c = 0.18 # plus or minus centre, usual setting - 0.18
     max_peak = 1
     centre = 0.6
     
@@ -591,15 +705,16 @@ def gauss_3_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1,
 
     # original bounds which are defaulted to when there are errors
     #                   a1      b1            c1 a2          b2     c2  a3       b3        c3  d
-    bounds_array = ((-1, centre - pm_c - 0.4, 0, -1, centre + pm_c, 0, -1, centre - max_peak,  0, 0.90), 
-                        (0, centre + pm_c + 0.4, 2,  0, centre + max_peak , 1,  0, centre - pm_c, 1, 1.05))
+    bounds_array = ((-1, centre - pm_c, 0, -1, centre + pm_c, 0, -1, centre - max_peak,  0, 0.90), 
+                     (0, centre + pm_c, 2,  0, centre + max_peak , 1,  0, centre - pm_c, 1, 1.05))
     
     p0_array = check_bounds(p0_array, bounds_array)
     
     # fit to the data
     coeff, var_matrix = curve_fit(gauss_3_model, wl, n_flux, 
-                                    p0 = p0_array, bounds= bounds_array, method = 'trf')
+                                    p0 = p0_array, bounds= bounds_array, maxfev=5000)
     return coeff, var_matrix
+
 
 def gauss_3LCR_fit2(wl, n_flux, a1 = -0.5, b1 = 0.6, c1 = 0.1, a2 = -0.5, b2 = 1.1, c2 = 0.1, a3 = -0.5, b3 = 0.09, c3 = 0.1):
     '''
@@ -934,7 +1049,7 @@ def check_future_points(change_array, i):
         else:
             return False
 
-def compare_triple(other_flux, wl, flux):
+def compare_triple(other_flux, coeff, wl, flux, a = 0, c = 0):
     '''
     Run fit with the old version of REvIEW: uninformed triple.
     note: here is where you set the threshold on how easily you can swap to the 
@@ -955,20 +1070,34 @@ def compare_triple(other_flux, wl, flux):
     array: coeffient array from the triple fit. None if triple is not as good as the current fit
     
     '''
-    # run fit with the conventional triple
-    # do a chiquared test to see which is a better fit to the data
-    coeff3, covar3 = gauss_3_fit2(wl, flux)
+    if a == 0 and c == 0:
+        # run fit with the conventional triple
+        # do a chiquared test to see which is a better fit to the data
+        coeff3, covar3 = gauss_3_uninformed(wl, flux)
+    else:
+        coeff3, covar3 = gauss_3_NN(wl, flux, a1 = a, c1 = c)
+    
+    # If the gradient method hits the bounds, swap to NN, I dont care
+    if coeff[-1] > 1.028 or coeff[-1] < 0.972:
+        
+        return coeff3
+    # look at the c parameter of the fit, if its larger than 0.2
+    elif coeff[2] > 0.2:
+        return coeff3
 
     # Looking at the +d parameter, if it does, throw it out (0.90, 1.05 bounds)
-    if coeff3[-1] > 1.045 or coeff3[-1] < 0.92:
-        return None
+    # NN condition - has smaller bounds because of the training spectra
+    #if coeff3[-1] > 1.02 or coeff3[-1] < 0.98:
+    #    return None
+
+    # look at the +d parameter if the fit, throw it out otherwise
 
     gauss_3_flux  = gauss_3_model(wl, *coeff3)
 
     # apply a penalty to the triple gaussian
     # tuned so single gaussians are always fit with a single
     # Set the threshold at which we swap to the triple
-    fit_threshold = 2
+    fit_threshold = 1
     if (fit_threshold * chisquare(gauss_3_flux, flux)[0]) < chisquare(other_flux, flux)[0]:
         #print('using triple instead')
         return coeff3
@@ -1184,6 +1313,46 @@ def grad_change(wl, flux):
 
     return no_of_peaks
 
+def make_spline(wl, spline_wl, flux):
+    # option 1
+    #f = interpolate.splrep(wl, flux, s=0)
+    #interp_flux = interpolate.splev(spline_wl, f, der=0)
+
+    # option 2
+    #f = interpolate.interp1d(wl, flux)
+    #interp_flux = f(spline_wl)
+
+    # option 3
+    #print(wl)
+    f = interpolate.CubicSpline(wl, flux)
+    interp_flux = f(spline_wl)
+
+    # remove values > 1 and < 0
+    interp_flux[interp_flux < 0] = 0
+    interp_flux[interp_flux > 1] = 1
+
+    # spline_wl should be the one with 86 points
+    return interp_flux.reshape((1, 86))
+
+def nn_estimate(spectra):
+    '''
+    Performs neural network estimate. Written by Ella
+    each spectra MUST have 86 points, or eles the model won't work. Linearly interpolate. 
+    '''
+    # read in model and scalars
+    model = FFNN(0,0,model='NN/model')
+    X_scalar = Scalar()
+    X_scalar.load('NN/model/X_scalar.npy')
+    y_scalar = Scalar()
+    y_scalar.load('NN/model/y_scalar.npy')
+
+    X = X_scalar.transform(spectra) # transform the input
+    y = model.predict(X) # predict the value
+    y = y_scalar.untransform(y) # untransform the predicted value
+    
+    #        a        c
+    return y[0, 0], y[0, 1]
+
 def fit_spectra(wl, flux):
     '''
     Main fitting code. Contains a number of flags that will be set to true if fitting fails.
@@ -1211,6 +1380,12 @@ def fit_spectra(wl, flux):
     # error flags
     tripe_improved_fit = False
     minima_error_to_triple = False
+    nn_warning = False
+
+    # pass the interpolated spectra to the neural network
+    # weird array parameters are just from how the spectra was set up
+    interpolated_spectra = make_spline(wl, np.arange(0, 1.207+0.0142, 0.0142), flux)
+    nn_a, nn_c = nn_estimate(interpolated_spectra)
 
     # preprocessing to identify the number of minima in the spectra
     change_number = grad_change(wl, flux)
@@ -1226,7 +1401,282 @@ def fit_spectra(wl, flux):
 
     # might be helpful but this didnt fix the problem
     #change_number = sigma_check(change_number, minima)
+    
+    # a and c are now going to be estimated from the NN
+    if minima == 1:
 
+        coeff, covar = gauss_1_fit2(wl, flux, 
+                                a = nn_a, #-(1-change_number[0, 3]), 
+                                b = change_number[0, 2],
+                                c = nn_c ) #change_number[0, 1] * 0.004) # estimated scaling factor
+        # comparing it to a triple
+        gauss_1_flux  = gauss_1_model(wl, *coeff)
+        triple_coeff = compare_triple(gauss_1_flux, coeff, wl, flux, a = nn_a, c = nn_c)
+        if triple_coeff is not None:
+            coeff = triple_coeff
+            tripe_improved_fit = True
+
+    elif minima == 2:
+
+        left_gaussian   = change_number[change_number[:,2] < 0.42]
+        centre_gaussian = change_number[(change_number[:,2] > 0.4) & (change_number[:,2] < 0.8)]
+        right_gaussian  = change_number[change_number[:,2] > 0.78]
+
+        # do a harsher cut if theres multiple central gaussians
+        if centre_gaussian.shape[0] > 1:
+            left_gaussian   = change_number[change_number[:,2] < 0.52]
+            centre_gaussian = change_number[(change_number[:,2] > 0.52) & (change_number[:,2] < 0.68)]
+            right_gaussian  = change_number[change_number[:,2] > 0.68]
+        
+        # left - centre
+        if left_gaussian.shape[0] != 0 and centre_gaussian.shape[0] != 0:
+            centre_gaussian = centre_gaussian[0]
+            left_gaussian = left_gaussian[0]
+            coeff, covar = gauss_2L_fit2(wl, flux, 
+                                        a  = nn_a, #-(1-centre_gaussian[3]),
+                                        b  = centre_gaussian[2],
+                                        c  = nn_c, #centre_gaussian[1] * 0.004,
+                                        aL = -(1-left_gaussian[3]),
+                                        bL = left_gaussian[2], 
+                                        cL = left_gaussian[1] * 0.004)
+
+        # right - centre
+        elif right_gaussian.shape[0] != 0 and centre_gaussian.shape[0] != 0:
+            centre_gaussian = centre_gaussian[0]
+            right_gaussian = right_gaussian[0]
+            coeff, covar = gauss_2R_fit2(wl, flux, 
+                                        a  = nn_a, #-(1-centre_gaussian[3]),
+                                        b  = centre_gaussian[2],
+                                        c  = nn_c, #centre_gaussian[1] * 0.004,
+                                        aR = -(1-right_gaussian[3]),
+                                        bR = right_gaussian[2],
+                                        cR = right_gaussian[1] * 0.004)
+        
+        else:
+            coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
+            minima_error_to_triple = True
+
+        if minima_error_to_triple == False:
+            # comparing it to a triple
+            gauss_2_flux  = gauss_2_model(wl, *coeff)
+            triple_coeff = compare_triple(gauss_2_flux, coeff, wl, flux, a = nn_a, c = nn_c)
+            if triple_coeff is not None:
+                coeff = triple_coeff
+                tripe_improved_fit = True
+
+
+    elif minima == 3:
+
+        left_gaussian   = change_number[change_number[:,2] < 0.42]
+        centre_gaussian = change_number[(change_number[:,2] > 0.4) & (change_number[:,2] < 0.8)]
+        right_gaussian  = change_number[change_number[:,2] > 0.78]
+
+        # do a harsher cut if theres multiple central gaussians
+        if centre_gaussian.shape[0] > 1:
+            left_gaussian   = change_number[change_number[:,2] < 0.52]
+            centre_gaussian = change_number[(change_number[:,2] > 0.52) & (change_number[:,2] < 0.68)]
+            right_gaussian  = change_number[change_number[:,2] > 0.68]
+
+        # centre - right - right
+        if right_gaussian.shape[0] > 1 and centre_gaussian.shape[0] == 1:
+            centre_gaussian = centre_gaussian[0]
+            right_gaussian1 = right_gaussian[0]
+            right_gaussian2 = right_gaussian[1]
+            
+            coeff, covar = gauss_3CRR_fit2(wl, flux,
+                                        a1 = nn_a, #-(1-centre_gaussian[3]),
+                                        b1 = centre_gaussian[2],
+                                        c1 = nn_c, #centre_gaussian[1] * 0.004,
+                                        a2 = -(1-right_gaussian1[3]),
+                                        b2 = right_gaussian1[2],
+                                        c2 = right_gaussian1[1] * 0.004,
+                                        a3 = -(1-right_gaussian2[3]),
+                                        b3 = right_gaussian2[2],
+                                        c3 = right_gaussian2[1] * 0.004)
+
+        # left - left - centre
+        elif left_gaussian.shape[0] > 1 and centre_gaussian.shape[0] == 1:
+            centre_gaussian = centre_gaussian[0]
+            left_gaussian1 = left_gaussian[0]
+            left_gaussian2 = left_gaussian[1]
+            
+            coeff, covar = gauss_3LLC_fit2(wl, flux,
+                                        a1 = nn_a, #-(1-centre_gaussian[3]),
+                                        b1 = centre_gaussian[2],
+                                        c1 = nn_c, #centre_gaussian[1] * 0.004,
+                                        a2 = -(1-left_gaussian1[3]),
+                                        b2 = left_gaussian1[2],
+                                        c2 = left_gaussian1[1] * 0.004,
+                                        a3 = -(1-left_gaussian2[3]),
+                                        b3 = left_gaussian2[2],
+                                        c3 = left_gaussian2[1] * 0.004)
+        
+        # left - centre - right
+        elif left_gaussian.shape[0]  == 1 and right_gaussian.shape[0]  == 1 and centre_gaussian.shape[0] == 1:
+            right_gaussian = right_gaussian[0]
+            centre_gaussian = centre_gaussian[0]
+            left_gaussian = left_gaussian[0]
+            
+            coeff, covar = gauss_3LCR_fit2(wl, flux,
+                                        a1 = nn_a, #-(1-centre_gaussian[3]),
+                                        b1 = centre_gaussian[2],
+                                        c1 = nn_c, #centre_gaussian[1] * 0.004,
+                                        a2 = -(1-right_gaussian[3]),
+                                        b2 = right_gaussian[2],
+                                        c2 = right_gaussian[1] * 0.004,
+                                        a3 = -(1-left_gaussian[3]),
+                                        b3 = left_gaussian[2],
+                                        c3 = left_gaussian[1] * 0.004)
+        else:
+            coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
+            minima_error_to_triple = True
+        
+        if minima_error_to_triple == False:
+            # comparing it to a triple, but the NN version...?
+            gauss_3_flux  = gauss_3_model(wl, *coeff)
+            triple_coeff = compare_triple(gauss_3_flux, coeff, wl, flux, a = nn_a, c = nn_c)
+            if triple_coeff is not None:
+                coeff = triple_coeff
+                tripe_improved_fit = True
+            
+        
+    elif minima == 4:
+
+        left_gaussian   = change_number[change_number[:,2] < 0.42]
+        centre_gaussian = change_number[(change_number[:,2] > 0.4) & (change_number[:,2] < 0.8)]
+        right_gaussian  = change_number[change_number[:,2] > 0.78]
+
+        # left - left - centre - right
+        if left_gaussian.shape[0] == 2 and centre_gaussian.shape[0] == 1 and right_gaussian.shape[0] == 1:
+            right_gaussian = right_gaussian[0]
+            centre_gaussian = centre_gaussian[0]
+            left_gaussian1 = left_gaussian[0]
+            left_gaussian2 = left_gaussian[1]
+
+            coeff, covar = gauss_4L_fit2(wl, flux,
+                                        a1 = nn_a, #-(1-centre_gaussian[3]),
+                                        b1 = centre_gaussian[2],
+                                        c1 = nn_c, #centre_gaussian[1] * 0.004,
+                                        a2 = -(1-right_gaussian[3]),
+                                        b2 = right_gaussian[2],
+                                        c2 = right_gaussian[1] * 0.004,
+                                        a3 = -(1-left_gaussian1[3]),
+                                        b3 = left_gaussian1[2],
+                                        c3 = left_gaussian1[1] * 0.004, 
+                                        a4 = -(1-left_gaussian2[3]),
+                                        b4 = left_gaussian2[2],
+                                        c4 = left_gaussian2[1] * 0.004)
+        # left - centre - right - right
+        elif left_gaussian.shape[0] == 1 and centre_gaussian.shape[0] == 1 and right_gaussian.shape[0] == 2:
+            right_gaussian1 = right_gaussian[0]
+            right_gaussian2 = right_gaussian[1]
+            centre_gaussian = centre_gaussian[0]
+            left_gaussian = left_gaussian[0]
+
+            coeff, covar = gauss_4R_fit2(wl, flux,
+                            a1 = nn_a, #-(1-centre_gaussian[3]),
+                            b1 = centre_gaussian[2],
+                            c1 = nn_c, #centre_gaussian[1] * 0.004,
+                            a2 = -(1-right_gaussian1[3]),
+                            b2 = right_gaussian1[2],
+                            c2 = right_gaussian1[1] * 0.004,
+                            a3 = -(1-right_gaussian2[3]),
+                            b3 = right_gaussian2[2],
+                            c3 = right_gaussian2[1] * 0.004, 
+                            a4 = -(1-left_gaussian[3]),
+                            b4 = left_gaussian[2],
+                            c4 = left_gaussian[1] * 0.004)
+        else:
+            coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
+            minima_error_to_triple = True
+
+        if minima_error_to_triple == False:
+            # comparing it to a triple
+            gauss_4_flux  = gauss_4_model(wl, *coeff)
+            triple_coeff = compare_triple(gauss_4_flux, coeff, wl, flux, a = nn_a, c = nn_c)
+            if triple_coeff is not None:
+                coeff = triple_coeff
+                tripe_improved_fit = True
+
+    else:
+        coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
+        minima_error_to_triple = True
+
+    
+    #print('a = ', coeff[0], 'c = ', coeff[2])
+    #print('curvefit ew:', get_gaussian_area(coeff[0], coeff[2]))
+
+
+    return coeff, tripe_improved_fit, minima_error_to_triple
+
+def fit_spectra_nn(wl, flux):
+    '''
+    Go straight to the NN fit
+    
+    Parameters
+    ----------
+    wl : array
+        The wavelength array. Should go from 0 to 1.2
+    flux : array
+        The flux values around the line we are fitting to
+    '''
+    # interpolate over the spectra
+    interpolated_spectra = make_spline(wl, np.arange(0, 1.207+0.0142, 0.0142), flux)
+    # get the a and c from the spectra
+    nn_a, nn_c = nn_estimate(interpolated_spectra)
+    coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1=nn_c)
+    return coeff
+
+def fit_spectra_original(wl, flux):
+    '''
+    Main fitting code. Contains a number of flags that will be set to true if fitting fails.
+    If theres > 4 minima identified, reduce it down to the most prominant peaks.
+
+    During the testing stage: or testing pass flux without the end two values. 
+    Must be the same length as wavelength.
+
+    Parameters
+    ----------
+    wl : array
+        The wavelength array. Should go from 0 to 1.2
+    flux : array
+        The flux values around the line we are fitting to
+    
+    Returns
+    -------
+    coeff : the coefficients of the best fit
+    tripe_improved_fit : bool
+        Flag for whether just using the conventional triple gaussian actually improved the fit
+    minima_error_to_triple : book
+        Flag for whether there was an unidentified number of gaussians found in the code
+    '''
+
+    # error flags
+    tripe_improved_fit = False
+    minima_error_to_triple = False
+    nn_warning = False
+
+    # pass the interpolated spectra to the neural network
+    # weird array parameters are just from how the spectra was set up
+    interpolated_spectra = make_spline(wl, np.arange(0, 1.207+0.0142, 0.0142), flux)
+    nn_a, nn_c = nn_estimate(interpolated_spectra)
+
+    # preprocessing to identify the number of minima in the spectra
+    change_number = grad_change(wl, flux)
+    
+    # Recovering the number of minima identified
+    minima = change_number.shape[0]
+
+    # If theres more than 4 minima, reduce it down to something that 
+    # th algorithm can deal with
+    if minima > 4:
+        change_number = reduce_minima(change_number, minima)
+        minima = change_number.shape[0]
+
+    # might be helpful but this didnt fix the problem
+    #change_number = sigma_check(change_number, minima)
+    
+    # a and c are now going to be estimated from the NN
     if minima == 1:
 
         coeff, covar = gauss_1_fit2(wl, flux, 
@@ -1277,13 +1727,13 @@ def fit_spectra(wl, flux):
                                         cR = right_gaussian[1] * 0.004)
         
         else:
-            coeff, covar = gauss_3_fit2(wl, flux)
+            coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
             minima_error_to_triple = True
 
         if minima_error_to_triple == False:
             # comparing it to a triple
             gauss_2_flux  = gauss_2_model(wl, *coeff)
-            triple_coeff = compare_triple(gauss_2_flux, wl, flux)
+            triple_coeff = compare_triple(gauss_2_flux, wl)
             if triple_coeff is not None:
                 coeff = triple_coeff
                 tripe_improved_fit = True
@@ -1352,7 +1802,7 @@ def fit_spectra(wl, flux):
                                         b3 = left_gaussian[2],
                                         c3 = left_gaussian[1] * 0.004)
         else:
-            coeff, covar = gauss_3_fit2(wl, flux)
+            coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
             minima_error_to_triple = True
             
         
@@ -1403,7 +1853,7 @@ def fit_spectra(wl, flux):
                             b4 = left_gaussian[2],
                             c4 = left_gaussian[1] * 0.004)
         else:
-            coeff, covar = gauss_3_fit2(wl, flux)
+            coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
             minima_error_to_triple = True
 
         if minima_error_to_triple == False:
@@ -1415,7 +1865,12 @@ def fit_spectra(wl, flux):
                 tripe_improved_fit = True
 
     else:
-        coeff, covar = gauss_3_fit2(wl, flux)
+        coeff, covar = gauss_3_NN(wl, flux, a1 = nn_a, c1 = nn_c)
         minima_error_to_triple = True
+
+    
+    #print('a = ', coeff[0], 'c = ', coeff[2])
+    #print('curvefit ew:', get_gaussian_area(coeff[0], coeff[2]))
+
 
     return coeff, tripe_improved_fit, minima_error_to_triple

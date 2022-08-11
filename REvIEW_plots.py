@@ -1,7 +1,34 @@
-from my_imports import *
+#from REvIEW_imports import *
+import os
+import numpy as np
+import pandas as pd
+
+
+
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, MaxNLocator
+import matplotlib.gridspec as gridspec
+from matplotlib.colorbar import Colorbar
+import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
+from matplotlib import colors
+import matplotlib.ticker as ticker
+from matplotlib import rcParams
+# RC params
+rcParams['font.family'] = 'serif'
+rcParams['font.size'] = 16
+rcParams["axes.edgecolor"] = 'black'
+rcParams["legend.edgecolor"] = '0.8'
+plt.rcParams.update({'errorbar.capsize': 2})
+plt.rcParams['mathtext.fontset'] = 'dejavuserif'
+plt.rcParams['text.latex.preamble']=r'\usepackage{amsmath}'
+
+
+from scipy.stats import chisquare
+
 
  # import all the fitting functions
-from REvIEW_fitting import read_spectra, gauss_1_model, gauss_2_model, gauss_3_model, gauss_4_model, gauss_3_fit2, fit_spectra
+from REvIEW_fitting import read_spectra, gauss_1_model, gauss_2_model, gauss_3_model, gauss_4_model, gauss_3_uninformed, fit_spectra, fit_spectra_nn
 
 
 def line_bounds(line, bounds = 2):
@@ -123,6 +150,29 @@ def make_residual(flux, model):
     '''
     return model - flux
 
+
+def my_chisquared(star_flux, model_flux):
+    '''
+    Calculates a metric for how well the model fits to the data.
+    The scipy version was throwing errors for unknown reasons so I'm making my own, less complex version.
+    Using the equation:
+
+
+    Parameters
+    ----------
+    star_flux : array
+        The spectra from the target star
+    model_flux : array
+        The fitted flux which should be sampled at the same wavelength to the star_flux
+        
+    Returns
+    -------
+        float: the chi squared value of the two input parameters
+    
+    '''
+    return np.sum((star_flux * model_flux)**2 /model_flux)
+
+
 def plot_fit(ax, spectra_slice, coeff):
     '''
     Plots the spectra according to the number of elements in the coeff array
@@ -194,7 +244,7 @@ def plot_fit(ax, spectra_slice, coeff):
     # See what the gaussian actually looks like
     ax.plot(spectra_slice.wavelength, gauss_1_model(spectra_slice, coeff[0], coeff[1], coeff[2], coeff[-1]), color ='#1D3557', zorder = 4, linewidth = 2, linestyle = '--', alpha = 0.6)
 
-    return minima, make_residual(spectra_slice.flux, model), chisquare(model, spectra_slice.flux)[0]
+    return minima, make_residual(spectra_slice.flux, model), my_chisquared(spectra_slice.flux, model)
 
 def shift_model(coeff, min_wl):
     '''
@@ -249,12 +299,12 @@ def flag_info(flags):
                 return 2
             elif key == "minima error to triple":
                 return 3
-            elif key == "uninformed triple":
+            elif key == "nn triple":
                 return 1
     # if its fine, return 0
     return 0
 
-def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, line_loc, x_lower, x_upper):
+def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, review_path, line_loc, x_lower, x_upper):
     ''' 
     Makes the plot of the spectra and the fits.
 
@@ -272,6 +322,8 @@ def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, line_loc, x
         The string of the directory where the spectra is kept
     ew_path : str
         The string of the directory where the EW .png's will be placed
+    review_path : str
+        The directory where REvIEW is running - for using NN functions
     line_loc : float
         The centre of the line to fit
     x_lower : int
@@ -294,7 +346,7 @@ def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, line_loc, x
     '''
     # error flags:
     
-    uninformed_triple = False # fit threw an error 
+    nn_triple = False # fit threw an error 
     triple_improved_fit = False    # the triple gaussian with a penalty was better than original 
     minima_error_to_triple = False # Unaccounted for number of minima found
     continuum_error = False # the curvefit couldnt fit the continuum
@@ -313,7 +365,7 @@ def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, line_loc, x
     
     # arbirtrary number of array points
     # Just in case we are at the end of the detecter and there are missing pixles
-    if spectra_slice.shape[0] < 20:
+    if spectra_slice.shape[0] < 15:
         no_data_to_fit = True
         y_lim_min = 0
         y_lim_max = 1.2
@@ -326,11 +378,17 @@ def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, line_loc, x
 
         # Try catch for error handling - just in case
         try:
+            os.chdir(review_path)
             fit_coeff, triple_improved_fit, minima_error_to_triple = fit_spectra(wl, spectra_slice.flux.to_numpy())
+            #fit_coeff = fit_spectra_nn(wl, spectra_slice.flux.to_numpy())
+            os.chdir(ew_path)
         except:
-            # something went wrong - revert to triple gaussians
-            fit_coeff, covar = gauss_3_fit2(wl, spectra_slice.flux)
-            uninformed_triple = True
+            # something went wrong - fit only using the NN
+            #print('something went wrong')
+            os.chdir(review_path)
+            fit_coeff = fit_spectra_nn(wl, spectra_slice.flux.to_numpy())
+            os.chdir(ew_path)
+            nn_triple = True
 
         
 
@@ -379,7 +437,7 @@ def spectra_plot(ax, filename, rv_correction, spectra_path, ew_path, line_loc, x
 
     flags = {                                           # flag numerical values
     "continuum error"       : continuum_error,          # 4 (most important)
-    "uninformed triple"     : uninformed_triple,        # 1
+    "NN triple"             : nn_triple,                # 1
     "triple improved fit"   : triple_improved_fit,      # 2
     "minima error to triple": minima_error_to_triple,   # 3
     "No data to fit to"     : no_data_to_fit            # 5
@@ -418,7 +476,7 @@ def info_plot(ax, file_name, output_csv, coeff, chi, minima, flags):
 
 
     ax.text(0, 0.9, file_name , style='normal',
-        bbox={'facecolor':'#D1495B', 'alpha':0.5, 'pad':10})
+        bbox={'facecolor':'#D1495B', 'alpha':0.5, 'pad':6})
     try:
         ew = -1 * coeff[0]* np.sqrt(2*np.pi * coeff[2]**2) * 1000 # in milli angstroms
 
@@ -481,7 +539,7 @@ def residual_plot(ax_data, fit_spectra, res, x_lower, x_upper):
     # make sure the data correctly aligns with the spectral plot
     ax_data.set_xlim(x_lower, x_upper)
     
-def gen_plots(n_spectra, filename_arr, rv_correction_arr, output_csv, spectra_path, ew_path, line_centre, x_lower, x_uppper, species):
+def gen_plots(n_spectra, filename_arr, rv_correction_arr, output_csv, spectra_path, ew_path, review_path,line_centre, x_lower, x_uppper, species):
     ''' 
     Outputs the plot images and all the corresponding fits to the spectra.
     Calls all other functions needed to calculate and plot the EWs.
@@ -516,7 +574,7 @@ def gen_plots(n_spectra, filename_arr, rv_correction_arr, output_csv, spectra_pa
     
     # Setting up plot information. Variable depending on the number of spectra
     fig = plt.figure(constrained_layout = True)
-    gs = fig.add_gridspec(n_spectra*3, 2, width_ratios=[1,0.5], height_ratios= hight_ratio(n_spectra), figure=fig, hspace=0.0)
+    gs = fig.add_gridspec(n_spectra*3, 2, width_ratios=[1,0.3], height_ratios= hight_ratio(n_spectra), figure=fig, hspace=0.0)
 
     fig.set_size_inches(10, n_spectra*3)
     fig.suptitle("Species: "+ str(species))
@@ -533,7 +591,7 @@ def gen_plots(n_spectra, filename_arr, rv_correction_arr, output_csv, spectra_pa
         if i % 3 == 0: # the info and spectra plots
 
             # Calculating fit and plotting spectra
-            res_wavelength, res, coeff, chi, plot_type, flags = spectra_plot(ax_data, filename_arr[j], rv_correction_arr[j], spectra_path, ew_path, line_centre, x_lower,x_uppper)
+            res_wavelength, res, coeff, chi, plot_type, flags = spectra_plot(ax_data, filename_arr[j], rv_correction_arr[j], spectra_path, ew_path, review_path,line_centre, x_lower,x_uppper)
 
             # add the line centre and name of the star
             output_csv.write(str(line_centre) + ',' + filename_arr[j] + ',')
@@ -552,5 +610,5 @@ def gen_plots(n_spectra, filename_arr, rv_correction_arr, output_csv, spectra_pa
             ax_data.axis('off')
     
     gs.update(wspace=0, hspace=0)
-    plt.savefig(str(line_centre) + '_fit.jpeg')
+    plt.savefig(str(line_centre) + '_fit.png', facecolor='White')
     plt.close()
