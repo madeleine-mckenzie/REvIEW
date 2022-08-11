@@ -51,3 +51,6 @@ If you used this code during your abundance analysis, I would love it if you cou
 
 ## Questions?
 If you have any questions about the installation process or the code, or any ideas for how to make REvIEW better? Please email me using madeleine.mckenzie \at\ gmail.com to discuss!
+
+#### Side note:
+I apologise in advance for any spelling errors or typos that might apear in the documentation or the code. I have dyslexia so I find it difficult to notice spelling errors. 
