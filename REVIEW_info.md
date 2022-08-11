@@ -1,10 +1,11 @@
 # How REvIEW works:
     A reference for Maddie and other interested parties.
     
-## Description ofthe plot outputs
+## Description of the plots:
 
 Annotations are given in blue.
-![](https://github.com/madeleine-mckenzie/REvIEW/blob/main/Images/REvIEW%20annotated.pdf)
+
+![](https://github.com/madeleine-mckenzie/REvIEW/blob/main/Images/REvIEW%20annotated.png)
 
 As described in the [example file](https://github.com/madeleine-mckenzie/REvIEW/tree/main/examples), bad fits to the line should be removed either by deleting that line in the CSV, or by adding some other number to the flag column and filtering out those lines later in the analysis process. 
 
