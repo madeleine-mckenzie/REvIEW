@@ -1,5 +1,12 @@
 # How REvIEW works:
-    A reference for maddie
+    A reference for Maddie and other interested parties.
+    
+## Description ofthe plot outputs
+
+Annotations are given in blue.
+![](https://github.com/madeleine-mckenzie/REvIEW/blob/main/Images/REvIEW%20annotated.pdf)
+
+As described in the [example file](https://github.com/madeleine-mckenzie/REvIEW/tree/main/examples), bad fits to the line should be removed either by deleting that line in the CSV, or by adding some other number to the flag column and filtering out those lines later in the analysis process. 
 
 ## Python notebook driver:
 The notebook has markdown comments and should step the user through how to run review. 
@@ -35,7 +42,7 @@ This is a potential bottleneck as the spectra isnt stored permanently each time.
 
 #### Fitting the spectra
 
-This must always be done using a fitting region of +-0.6$\AA$ (1.2 $\AA$ in totoal). All the fitting procedures (specifically the fitting bounds) are hard coded in to work with a 1.2 $\AA$ wavelength region
+This must always be done using a fitting region of +-0.6$\AA{}$ (1.2 $\AA{}$ in totoal). All the fitting procedures (specifically the fitting bounds) are hard coded in to work with a 1.2 $\AA$ wavelength region
 
 Pandas array slicing is used to extract the spectra only within this wavelength range. If there are missing pixels (with less than 20 left in the spectra), do not try to fit the spectra otherwise the fitting routines will crash.
 
