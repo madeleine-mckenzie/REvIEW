@@ -2,6 +2,8 @@
 
 The [REvIEW.ipynb](https://github.com/madeleine-mckenzie/REvIEW/blob/main/REvIEW.ipynb) notebook comes with example values to test whether the code is working on your machine. Here I'll discuss the outputs of these example plots to illustrate how I would use the code. 
 
+**Note:*** scroll to the end of the document for advice on removing the bad fits. 
+
 ## Fits I would accept:
 
 ### 4808.16 Fe I line:
@@ -30,3 +32,13 @@ The line has not been correctly identified and would need to be manually removed
 ![](https://github.com/madeleine-mckenzie/REvIEW/blob/main/Images/4802.88_fit.png)
 
 M22_III-3 is acceptable, but the noise in M22_III-14 has meant that the fit is not as good as it could be. 
+
+## Removing bad fits:
+Whether it's because of noise, blends or magic, sometimes REvIEW just doesn't do a great job of fitting the lines (sorry, I'm trying my best to minimise this happening). There are two main approaches I have used to removing bad lines.
+
+1) Add an additional flag to the final column (e.g. 6) and all bad fits you change the flag to 6. Then during the processing step, filter out any stars with this flag.
+2) Removing the entire line from the csv file.
+
+
+
+
