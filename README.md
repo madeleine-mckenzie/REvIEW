@@ -27,7 +27,7 @@ A python instalation (>3.7) is neccecary to run this code (get [anaconda](https:
 Recent updates to the code which use a neural network (NN) back end require the user to install pytorch
 
 ```bash
-conda install pytorch torchvision torchaudio -c pytorch
+conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 -c pytorch
 ``` 
 
 Spectra to be analysed needs to be in a continuum normalised .txt format with one column the wavelength, and the other the normalised flux. Future releases will allow for .fits files as well as .txt (I'm working on it).
